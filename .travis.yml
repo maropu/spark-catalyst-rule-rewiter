@@ -1,6 +1,3 @@
-dist: trusty
-sudo: required
-
 language: scala
 
 jdk:
@@ -16,8 +13,3 @@ notifications:
 
 script:
   - ./build/mvn -q scalastyle:check test
-
-after_success:
-  # Fails because of too long tests in Travis CI
-  - ./build/mvn -q cobertura:cobertura coveralls:report
-
