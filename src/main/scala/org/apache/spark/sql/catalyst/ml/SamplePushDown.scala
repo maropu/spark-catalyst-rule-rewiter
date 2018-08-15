@@ -62,22 +62,17 @@ object SamplePushDown extends MLAwareRuleBase with PredicateHelper {
           if (starJoinPlan.nonEmpty) {
             val (factTable, dimTables) = (starJoinPlan.head, starJoinPlan.tail)
             val otherTables = input.filterNot { case (p, _) => starJoinPlan.contains(p) }
-            // Gives up sampling pushdown if we have selective joins on dimension tables
-            if (!isSelectiveStarJoin(dimTables, conditions)) {
-              val factTableTableRefs = factTable.outputSet
-              val (factTableConditions, otherConditions) = conditions.partition(
-                e => e.references.subsetOf(factTableTableRefs) && canEvaluateWithinJoin(e))
-              val newFactTable = if (factTableConditions.nonEmpty) {
-                Filter(factTableConditions.reduceLeft(And), factTable)
-              } else {
-                factTable
-              }
-              val sampledFactTable = sample.copy(child = newFactTable)
-              val newStarJoinPlan = (sampledFactTable +: dimTables).map(plan => (plan, Inner))
-              ReorderJoin.createOrderedJoin(newStarJoinPlan ++ otherTables, otherConditions)
+            val factTableTableRefs = factTable.outputSet
+            val (factTableConditions, otherConditions) = conditions.partition(
+              e => e.references.subsetOf(factTableTableRefs) && canEvaluateWithinJoin(e))
+            val newFactTable = if (factTableConditions.nonEmpty) {
+              Filter(factTableConditions.reduceLeft(And), factTable)
             } else {
-              sample
+              factTable
             }
+            val sampledFactTable = sample.copy(child = newFactTable)
+            val newStarJoinPlan = (sampledFactTable +: dimTables).map(plan => (plan, Inner))
+            ReorderJoin.createOrderedJoin(newStarJoinPlan ++ otherTables, otherConditions)
           } else {
             sample
           }

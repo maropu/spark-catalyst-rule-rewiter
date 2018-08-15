@@ -19,9 +19,10 @@
 
 package org.apache.spark.sql.catalyst.ml
 
+import org.apache.spark.sql.catalyst.analysis.EliminateSubqueryAliases
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.ml.CatalystConf._
-import org.apache.spark.sql.catalyst.plans.logical.{Histogram, LogicalPlan, Project, Statistics}
+import org.apache.spark.sql.catalyst.plans.logical._
 import org.apache.spark.sql.internal.SQLConf
 
 
@@ -32,8 +33,15 @@ import org.apache.spark.sql.internal.SQLConf
  */
 object VarianceThreshold extends MLAwareRuleBase {
 
-  private def hasColumnHistogram(s: Statistics): Boolean = {
-    s.attributeStats.exists { case (_, stat) =>
+  private def planSupported(p: LogicalPlan): Boolean = p.find {
+    case _: Command => true
+    // TODO: `AnalysisBarrier` removed in v2.4+
+    case _: AnalysisBarrier => true
+    case _ => false
+  }.isEmpty
+
+  private def hasColumnHistogram(p: LogicalPlan): Boolean = {
+    p.stats.attributeStats.exists { case (_, stat) =>
       stat.histogram.isDefined
     }
   }
@@ -59,21 +67,23 @@ object VarianceThreshold extends MLAwareRuleBase {
   }
 
   override def doApply(plan: LogicalPlan): LogicalPlan = plan match {
-    case p if SQLConf.get.varianceThresholdEnabled && hasColumnHistogram(p.stats) =>
-      val attributeStats = p.stats.attributeStats
-      val outputAttrs = p.output
-      val threshold = SQLConf.get.varianceThresholdValue
-      val projectList = outputAttrs.zip(outputAttrs.map { a => attributeStats.get(a)}).flatMap {
-        case (attr, Some(stat)) if !checkVariance(attr, stat.histogram, threshold) => None
-        case (attr, _) => Some(attr)
-      }
-      if (projectList != outputAttrs) {
-        println("origOutput:" + outputAttrs)
-        println("projectList:" + projectList)
-        println("p:" + p)
-        Project(projectList, p)
+    case origPlan if planSupported(origPlan) && SQLConf.get.varianceThresholdEnabled =>
+      val plan = EliminateSubqueryAliases(origPlan)
+      if (hasColumnHistogram(plan)) {
+        val attributeStats = plan.stats.attributeStats
+        val outputAttrs = plan.output
+        val threshold = SQLConf.get.varianceThresholdValue
+        val projectList = outputAttrs.zip(outputAttrs.map { a => attributeStats.get(a) }).flatMap {
+          case (attr, Some(stat)) if !checkVariance(attr, stat.histogram, threshold) => None
+          case (attr, _) => Some(attr)
+        }
+        if (projectList != outputAttrs) {
+          Project(projectList, origPlan)
+        } else {
+          origPlan
+        }
       } else {
-        p
+        origPlan
       }
 
     case p => p

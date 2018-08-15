@@ -20,18 +20,17 @@
 package org.apache.spark.sql.catalyst.ml
 
 import org.apache.spark.sql.{QueryTest, Row}
-import org.apache.spark.sql.catalyst.optimizer.CollapseProject
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.test.SharedSQLContext
 
-
-class VarianceThresholdSuite extends QueryTest with SharedSQLContext {
+class VarianceThresholdSuite extends QueryTest with SharedSparkSessionWithExtenstion {
   import testImplicits._
 
   protected override def beforeAll(): Unit = {
     super.beforeAll()
     // Sets user-defined optimization rules for feature selection
-    sqlContext.experimental.extraOptimizations = Seq(VarianceThreshold, CollapseProject)
+    initializeSession { extensions =>
+      extensions.injectPostHocResolutionRule(_ => VarianceThreshold)
+    }
   }
 
   test("filter out features with low variances") {
@@ -55,11 +54,8 @@ class VarianceThresholdSuite extends QueryTest with SharedSQLContext {
 
           // We assume that Catalyst filters out `c0` and `c2` because of low variances
           val df = sql("SELECT c0, * FROM t")
-          df.printSchema()
           val optimizedPlan = df.queryExecution.optimizedPlan
           assert(optimizedPlan.output.map(_.name) === Seq("c1", "c3"))
-          df.show
-          df.explain(true)
           checkAnswer(df, Row("one", 1.0) :: Row("two", 2.3) :: Row("three", 3.5) :: Nil)
         }
       }

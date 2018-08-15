@@ -339,7 +339,9 @@ private[ml] object StarSchemaDetection extends PredicateHelper {
       // on the dimension tables. In a star schema relationship, the join between the fact and the
       // dimension table is a FK-PK join. Heuristically, a selective dimension may reduce
       // the result of a join.
-      if (isSelectiveStarJoin(dimTables, conditions)) {
+
+      // TODO: Why are selective star joins only supported?
+      // if (isSelectiveStarJoin(dimTables, conditions)) {
         val reorderDimTables = dimTables.map { plan =>
           TableAccessCardinality(plan, getTableAccessCardinality(plan))
         }.sortBy(_.size).map {
@@ -348,9 +350,9 @@ private[ml] object StarSchemaDetection extends PredicateHelper {
 
         val reorderStarPlan = factTable +: reorderDimTables
         reorderStarPlan.map(plan => (plan, Inner))
-      } else {
-        emptyStarJoinPlan
-      }
+      // } else {
+      //   emptyStarJoinPlan
+      // }
     }
   }
 }

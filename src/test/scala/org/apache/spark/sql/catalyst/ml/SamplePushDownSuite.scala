@@ -19,18 +19,21 @@
 
 package org.apache.spark.sql.catalyst.ml
 
+import scala.collection.mutable
+
 import org.apache.spark.sql.QueryTest
+import org.apache.spark.sql.catalyst.plans.logical.{Join, Sample}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.test.SharedSQLContext
 
-
-class SamplePushDownSuite extends QueryTest with SharedSQLContext {
+class SamplePushDownSuite extends QueryTest with SharedSparkSessionWithExtenstion {
   import testImplicits._
 
   protected override def beforeAll(): Unit = {
     super.beforeAll()
     // Sets user-defined optimization rules for feature selection
-    sqlContext.experimental.extraOptimizations = Seq(SamplePushDown)
+    initializeSession { extensions =>
+      extensions.injectOptimizerRule(_ => SamplePushDown)
+    }
   }
 
   test("sample pushdown") {
@@ -42,25 +45,46 @@ class SamplePushDownSuite extends QueryTest with SharedSQLContext {
 
       withTable("r1", "r2") {
         withTempDir { dir =>
-          Seq((1, 1, 3.8), (2, 1, 1.1), (3, 2, 0.9), (4, 1, 0.9))
-            .toDF("pk1", "fk1", "a0").write.mode("overwrite").parquet(dir.getAbsolutePath)
+          Seq((1, 1, 1, 3.8), (2, 1, 2, 1.1), (3, 2, 1, 0.9), (4, 1, 1, 0.9))
+            .toDF("pk1", "fk1", "fk2", "a0").write.mode("overwrite").parquet(dir.getAbsolutePath)
           spark.read.parquet(dir.getAbsolutePath).write.saveAsTable("r1")
-          spark.sql("ANALYZE TABLE r1 COMPUTE STATISTICS FOR COLUMNS fk1")
+          spark.sql("ANALYZE TABLE r1 COMPUTE STATISTICS FOR COLUMNS fk1, fk2")
 
-          Seq((1, "abc"), (2, "def"))
+          Seq((1, 3.5), (2, 0.3))
             .toDF("pk2", "b0").write.mode("overwrite").parquet(dir.getAbsolutePath)
           spark.read.parquet(dir.getAbsolutePath).write.saveAsTable("r2")
           spark.sql("ANALYZE TABLE r2 COMPUTE STATISTICS FOR COLUMNS pk2")
 
-          // Two join case
-          val df = spark.sql(
+          Seq((1, 3.8), (2, 4.5))
+            .toDF("pk3", "c0").write.mode("overwrite").parquet(dir.getAbsolutePath)
+          spark.read.parquet(dir.getAbsolutePath).write.saveAsTable("r3")
+          spark.sql("ANALYZE TABLE r3 COMPUTE STATISTICS FOR COLUMNS pk3")
+
+          // Single join case
+          val df1 = spark.sql(
             s"""SELECT * FROM (
                |  SELECT * FROM r1, r2 WHERE fk1 = pk2 AND pk1 > 3
                |) TABLESAMPLE (25 PERCENT)
              """.stripMargin)
-          df.explain()
+          val planNodes1 = mutable.Buffer.empty[String]
+          df1.queryExecution.optimizedPlan.foreachUp {
+            case p @ (_: Join | _: Sample) => planNodes1 += p.nodeName
+            case _ =>
+          }
+          assert(planNodes1 === Seq("Sample", "Join"))
 
-          // Three join case
+          // Two join case
+          val df2 = spark.sql(
+            s"""SELECT * FROM (
+               |  SELECT * FROM r1, r2, r3 WHERE fk1 = pk2 AND fk2 = pk3 AND c0 > 1.0
+               |) TABLESAMPLE (25 PERCENT)
+             """.stripMargin)
+          val planNodes2 = mutable.Buffer.empty[String]
+          df2.queryExecution.optimizedPlan.foreachUp {
+            case p @ (_: Join | _: Sample) => planNodes2 += p.nodeName
+            case _ =>
+          }
+          assert(planNodes2 === Seq("Sample", "Join", "Join"))
         }
       }
     }
