@@ -17,17 +17,14 @@
 
 package org.apache.spark.sql.catalyst.ml
 
-import org.apache.spark.sql.catalyst.ml.CatalystConf._
-import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
-import org.apache.spark.sql.catalyst.rules.Rule
-import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.SparkSessionExtensions
 
-// Base class for ML-aware rules
-abstract class MLAwareRuleBase extends Rule[LogicalPlan] {
+object MLAwareRuleBuilder extends (SparkSessionExtensions => Unit) {
 
-  def doApply(plan: LogicalPlan): LogicalPlan
-
-  override final def apply(plan: LogicalPlan): LogicalPlan = {
-    if (SQLConf.get.featureSelectionEnabled) doApply(plan) else plan
+  override def apply(f: SparkSessionExtensions): Unit = {
+    // Since `VarianceThreshold` could modify an output schema, we need
+    // to add this rule in Analyzer.
+    f.injectPostHocResolutionRule(_ => VarianceThreshold)
+    f.injectOptimizerRule(_ => SamplePushDown)
   }
 }

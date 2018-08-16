@@ -26,11 +26,10 @@ import org.apache.spark.sql.catalyst.plans.Inner
 import org.apache.spark.sql.catalyst.plans.logical.{Filter, Join, LogicalPlan, Sample}
 import org.apache.spark.sql.internal.SQLConf
 
-
 /**
  * Pushes down [[Sample]] beneath the inputs of inner/outer joins under some conditions.
  */
-object SamplePushDown extends MLAwareRuleBase with PredicateHelper {
+private[ml] object SamplePushDown extends MLAwareRuleBase with PredicateHelper {
 
   def doApply(plan: LogicalPlan): LogicalPlan = plan.transform {
     case sample @ Sample(_, _, _, _, child) => child match {

@@ -19,7 +19,6 @@ package org.apache.spark.sql.catalyst.ml.util
 
 import org.apache.spark.SparkEnv
 
-
 object Utils {
 
   def getConf(key: String, default: Boolean): Boolean = {

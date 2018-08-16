@@ -23,13 +23,12 @@ import org.apache.spark.sql.catalyst.ml.CatalystConf._
 import org.apache.spark.sql.catalyst.plans.logical._
 import org.apache.spark.sql.internal.SQLConf
 
-
 /**
  * This optimizer rule removes features with low variance; it removes all features whose
  * variance doesn't meet some threshold. You can control this threshold by
  * `spark.sql.optimizer.featureSelection.varianceThreshold` (0.05 by default).
  */
-object VarianceThreshold extends MLAwareRuleBase {
+private[ml] object VarianceThreshold extends MLAwareRuleBase {
 
   private def planSupported(p: LogicalPlan): Boolean = p.find {
     case _: Command => true
