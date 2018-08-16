@@ -13,3 +13,4 @@ notifications:
 
 script:
   - ./build/mvn -q scalastyle:check test
+
